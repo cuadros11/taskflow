@@ -154,6 +154,17 @@ El Worker detecta el marcador, lanza un error controlado y la solicitud queda en
 | 7 | **Error** | Simular un error controlado y comprobar el estado ERROR | Crear una solicitud con `[SIMULAR ERROR]` en el título o la descripción. |
 | 8 | **Responsive** | Comprobar la interfaz en diferentes tamaños | Abrir http://localhost:8081 y redimensionar o usar el modo dispositivo del navegador. |
 
+## Scripts de demostración
+
+`scripts/crear-solicitudes.mjs` registra N solicitudes contra la API sin usar el navegador. Útil para la prueba de cola y recuperación:
+
+```bash
+docker compose stop worker
+node scripts/crear-solicitudes.mjs 5            # 5 solicitudes quedan EN COLA
+docker compose start worker                     # el Worker las procesa
+node scripts/crear-solicitudes.mjs 1 --error    # demo del estado ERROR
+```
+
 ## Eventos Socket.IO
 
 | Evento | Emisor | Propósito |
