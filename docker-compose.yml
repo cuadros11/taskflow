@@ -1,0 +1,77 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    container_name: taskflow-frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: taskflow-backend
+    environment:
+      PORT: 3000
+      MONGODB_URI: mongodb://mongoserver:27017/taskflow
+      REDIS_URL: redis://redisserver:6379
+      CLIENT_ORIGIN: http://localhost:8081
+      CACHE_TTL: 60
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongoserver:
+        condition: service_healthy
+      redisserver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+    container_name: taskflow-worker
+    environment:
+      MONGODB_URI: mongodb://mongoserver:27017/taskflow
+      REDIS_URL: redis://redisserver:6379
+      HEARTBEAT_TTL: 15
+    depends_on:
+      mongoserver:
+        condition: service_healthy
+      redisserver:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  mongoserver:
+    image: mongo:7
+    container_name: taskflow-mongoserver
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  redisserver:
+    image: redis:7-alpine
+    container_name: taskflow-redisserver
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+    name: mongo-data
