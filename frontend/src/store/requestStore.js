@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import requestService from '../services/requestService';
 import monitorService from '../services/monitorService';
-import { useSocket } from '../composables/useSocket';
+import socket from '../plugins/socket';
 
 export const useRequestStore = defineStore('requests', {
   state: () => ({
@@ -108,8 +108,6 @@ export const useRequestStore = defineStore('requests', {
     },
 
     iniciarListenersSocket() {
-      const socket = useSocket();
-
       const eventos = [
         'solicitud-creada',
         'solicitud-encolada',
