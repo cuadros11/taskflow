@@ -3,7 +3,9 @@ const { REDIS } = require('../utils/constantes');
 function crearMonitorService({ solicitudes, redis, clienteRedis, mongoose }) {
   async function obtenerEstado() {
     const contadores = await solicitudes.contarPorEstado();
-    const enCola = await redis.contarCola();
+    // Largo real de la cola de Redis (dato de diagnóstico). El conteo de
+    // "EN COLA" viene del estado real en MongoDB y ya viene en `contadores`.
+    const colaRedis = await redis.contarCola();
 
     const mongodbActivo = mongoose.connection.readyState === 1;
 
@@ -18,7 +20,12 @@ function crearMonitorService({ solicitudes, redis, clienteRedis, mongoose }) {
 
     let workerActivo = false;
     try {
-      workerActivo = Boolean(await clienteRedis.exists(REDIS.WORKER_HEARTBEAT));
+      const heartbeat = await clienteRedis.get(REDIS.WORKER_HEARTBEAT);
+      // El heartbeat solo cuenta si su marca de tiempo es reciente (ventana
+      // de 2× el intervalo de latido de 5 s del worker): si el worker muere
+      // sin poder borrar la clave, se detecta igual en ~10 s.
+      const ventanaMs = Number(process.env.HEARTBEAT_VENTANA_MS || 10000);
+      workerActivo = Boolean(heartbeat && Date.now() - Number(heartbeat) < ventanaMs);
     } catch (err) {
       workerActivo = false;
     }
@@ -31,7 +38,7 @@ function crearMonitorService({ solicitudes, redis, clienteRedis, mongoose }) {
         worker: workerActivo,
       },
       redis: { activo: redisActivo, latenciaMs: redisLatencia },
-      contadores: { ...contadores, enCola },
+      contadores: { ...contadores, colaRedis },
     };
   }
 

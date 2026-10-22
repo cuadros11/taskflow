@@ -15,12 +15,17 @@ function crearApp({ solicitudesService, redis, monitor, clienteRedis, mongoose }
   const server = http.createServer(app);
 
   const origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+  const origenesPermitidos = [
+    origin,
+    'http://localhost:5173',
+    'http://localhost:8081',
+  ];
   const io = new Server(server, {
-    cors: { origin: [origin, 'http://localhost:5173'], methods: ['GET', 'POST', 'PUT', 'DELETE'] },
+    cors: { origin: origenesPermitidos, methods: ['GET', 'POST', 'PUT', 'DELETE'] },
   });
 
   app.use(helmet());
-  app.use(cors({ origin: [origin, 'http://localhost:5173'] }));
+  app.use(cors({ origin: origenesPermitidos }));
   app.use(express.json());
   app.use(morgan('dev'));
 

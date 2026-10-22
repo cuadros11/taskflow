@@ -36,6 +36,23 @@ async function iniciar() {
     obtenerContadores: () => solicitudesService.contarPorEstado(),
   });
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n[server] El puerto ${PORT} ya está en uso.`);
+      console.error(
+        `[server] Ya hay otra instancia corriendo (otra terminal con "npm run dev"/"npm start", ` +
+          `o el contenedor taskflow-backend). Ciérrala o cambia PORT en backend/.env`
+      );
+      process.exit(1);
+    }
+    if (err.code === 'EACCES') {
+      console.error(`\n[server] No hay permisos para usar el puerto ${PORT}.`);
+      process.exit(1);
+    }
+    console.error('[server] Error del servidor HTTP:', err.message);
+    process.exit(1);
+  });
+
   server.listen(PORT, () => {
     console.log('========================================');
     console.log(' TASKFLOW Backend  (Express + Socket.IO)');
@@ -46,9 +63,9 @@ async function iniciar() {
   const cerrar = async (señal) => {
     console.log(`\n[server] recibida señal ${señal}, cerrando...`);
     await mongoose.connection.close().catch(() => {});
-    cliente.quit();
-    suscriptor.quit();
-    publicador.quit();
+    cliente.quit().catch(() => {});
+    suscriptor.quit().catch(() => {});
+    publicador.quit().catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   };

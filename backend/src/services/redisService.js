@@ -14,12 +14,21 @@ function crearRedisService({ cliente, publicador }) {
   }
 
   async function cacheGet(llave) {
-    const valor = await cliente.get(llave);
-    return valor ? JSON.parse(valor) : null;
+    try {
+      const valor = await cliente.get(llave);
+      return valor ? JSON.parse(valor) : null;
+    } catch (err) {
+      // Si Redis no está disponible, la caché se omite y se consulta MongoDB.
+      return null;
+    }
   }
 
   async function cacheSet(llave, dato, ttl = REDIS.CACHE_TTL) {
-    await cliente.set(llave, JSON.stringify(dato), 'EX', ttl);
+    try {
+      await cliente.set(llave, JSON.stringify(dato), 'EX', ttl);
+    } catch (err) {
+      // La caché es opcional: no bloquea la respuesta si Redis está caído.
+    }
   }
 
   async function cacheDel(llave) {
