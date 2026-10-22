@@ -50,6 +50,9 @@ services:
     container_name: taskflow-mongoserver
     ports:
       - "27017:27017"
+      # Puerto adicional para procesos del host (VS Code): el IPv4 27017
+      # puede estar ocupado por otro MongoDB local, así el host usa 27018.
+      - "27018:27017"
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -63,6 +66,11 @@ services:
   redisserver:
     image: redis:7-alpine
     container_name: taskflow-redisserver
+    # Persistencia: sin esto, la cola de solicitudes se pierde al reiniciar
+    # el contenedor y las solicitudes quedan atascadas en estado "EN COLA".
+    command: redis-server --appendonly yes --dir /data
+    volumes:
+      - redis-data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -75,3 +83,5 @@ services:
 volumes:
   mongo-data:
     name: mongo-data
+  redis-data:
+    name: redis-data
