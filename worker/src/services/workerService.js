@@ -1,6 +1,10 @@
 const Solicitud = require('../models/Solicitud');
 const { ESTADOS, REDIS } = require('../utils/constantes');
 const { generarRespuesta } = require('./reglasService');
+const { crearRegistroFallos } = require('../utils/registroFallos');
+
+const registroHeartbeat = crearRegistroFallos('[worker][heartbeat]');
+const registroRecuperacion = crearRegistroFallos('[worker][recuperacion]');
 
 function crearWorkerService({ redis }) {
   async function tomarSolicitudDeCola(timeout = 5) {
@@ -28,8 +32,58 @@ function crearWorkerService({ redis }) {
     try {
       const ttl = Number(process.env.HEARTBEAT_TTL || 15);
       await redis.set(REDIS.WORKER_HEARTBEAT, String(Date.now()), 'EX', ttl);
+      registroHeartbeat.ok();
     } catch (err) {
-      console.warn('[worker] no se pudo actualizar heartbeat:', err.message);
+      registroHeartbeat.fallo(err);
+    }
+  }
+
+  /** Borra el heartbeat al cerrar para que el monitor lo detecte al instante. */
+  async function liberarHeartbeat() {
+    try {
+      await redis.del(REDIS.WORKER_HEARTBEAT);
+    } catch (err) {
+      // Redis puede no estar disponible al cerrar: no bloquea la salida.
+    }
+  }
+
+  /**
+   * Recupera solicitudes huérfanas: documentos en estado "EN COLA" cuyo ID ya
+   * no está en la cola de Redis (p. ej. porque la cola se perdió al reiniciar
+   * Redis o el worker murió justo después del BLPOP). Se consideran solo las
+   * que llevan `EDAD_MINIMA_MS` sin actualizarse para no interferir con una
+   * solicitud que se acaba de crear o que el worker está procesando ahora.
+   */
+  async function recuperarHuerfanas() {
+    try {
+      const edadMinimaMs = Number(process.env.RECUPERACION_EDAD_MS || 60000);
+      const limite = new Date(Date.now() - edadMinimaMs);
+
+      const candidatas = await Solicitud.find({
+        estado: ESTADOS.EN_COLA,
+        fechaActualizacion: { $lt: limite },
+      }).select('_id');
+
+      if (!candidatas.length) return { revisadas: 0, reencoladas: 0 };
+
+      const enCola = await redis.lrange(REDIS.COLA, 0, -1);
+      const existentes = new Set(enCola.map(String));
+      const faltantes = candidatas
+        .map((solicitud) => String(solicitud._id))
+        .filter((id) => !existentes.has(id));
+
+      if (faltantes.length) {
+        await redis.rpush(REDIS.COLA, ...faltantes);
+        console.log(
+          `[worker] recuperación: ${faltantes.length} solicitud(es) huérfana(s) volvieron a la cola`
+        );
+      }
+
+      registroRecuperacion.ok();
+      return { revisadas: candidatas.length, reencoladas: faltantes.length };
+    } catch (err) {
+      registroRecuperacion.fallo(err);
+      return { revisadas: 0, reencoladas: 0, error: err.message };
     }
   }
 
@@ -96,7 +150,7 @@ function crearWorkerService({ redis }) {
     return procesarSolicitud(id);
   }
 
-  return { ejecutarCiclo, procesarSolicitud, mantenerHeartbeat };
+  return { ejecutarCiclo, procesarSolicitud, mantenerHeartbeat, recuperarHuerfanas, liberarHeartbeat };
 }
 
 module.exports = { crearWorkerService };

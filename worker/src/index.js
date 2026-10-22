@@ -3,6 +3,7 @@ require('dotenv').config();
 const { conectarMongoDB } = require('./config/db');
 const { crearClienteRedis } = require('./config/redis');
 const { crearWorkerService } = require('./services/workerService');
+const { crearRegistroFallos } = require('./utils/registroFallos');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/taskflow';
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -20,13 +21,15 @@ async function iniciar() {
   console.log('========================================');
 
   let detenido = false;
+  const registroCiclo = crearRegistroFallos('[worker][ciclo]');
 
   async function ciclo() {
     if (detenido) return;
     try {
       await worker.ejecutarCiclo();
+      registroCiclo.ok();
     } catch (err) {
-      console.error('[worker] error de ciclo:', err.message);
+      registroCiclo.fallo(err);
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
     setTimeout(ciclo, INTERVALO_MS);
@@ -34,12 +37,18 @@ async function iniciar() {
 
   setInterval(() => worker.mantenerHeartbeat().catch(() => {}), 5000);
 
+  // Recuperación de solicitudes huérfanas: al arrancar y luego periódicamente.
+  const INTERVALO_RECUPERACION_MS = Number(process.env.INTERVALO_RECUPERACION_MS || 60 * 1000);
+  worker.recuperarHuerfanas();
+  setInterval(() => worker.recuperarHuerfanas(), INTERVALO_RECUPERACION_MS);
+
   setTimeout(ciclo, 0);
 
   const cerrar = async () => {
     detenido = true;
     console.log('\n[worker] cerrando...');
-    redis.quit();
+    await worker.liberarHeartbeat();
+    redis.quit().catch(() => {});
     process.exit(0);
   };
 
